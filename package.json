@@ -10,7 +10,7 @@
     "start": "node build/spotify-mcp-server.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.8.0",
+    "@modelcontextprotocol/sdk": "^1.16.0",
     "@types/cors": "^2.8.18",
     "@types/express": "^5.0.1",
     "axios": "^1.6.2",
