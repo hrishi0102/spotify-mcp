@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: spotify-mcp-server
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node spotify_mcp_http.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+    healthCheckPath: /health

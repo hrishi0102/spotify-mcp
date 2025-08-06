@@ -3,8 +3,8 @@ import axios from "axios";
 import fs from "fs";
 
 // Replace these with your Spotify app credentials
-const CLIENT_ID = "";
-const CLIENT_SECRET = "";
+const CLIENT_ID = "e3e34c8780f1445da29b1ae481169577";
+const CLIENT_SECRET = "8f7d56d25e794ab8aef197840e204fb7";
 const REDIRECT_URI = "http://localhost:8888/callback";
 
 const app = express();

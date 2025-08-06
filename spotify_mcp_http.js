@@ -1,94 +1,93 @@
 import express from "express";
+import cors from "cors";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
+import fetch from "node-fetch";
 
-let spotifyAuthInfo = {
-  accessToken: "",
-  refreshToken: "",
-  clientId: "",
-  clientSecret: "",
-};
-
-// Refresh token when needed
-async function getValidAccessToken() {
-  if (!spotifyAuthInfo.accessToken || !spotifyAuthInfo.refreshToken) {
-    throw new Error(
-      "No access token available. Please set credentials first using the set-spotify-credentials tool."
-    );
-  }
-
-  try {
-    // Try using current token
-    const response = await fetch("https://api.spotify.com/v1/me", {
-      headers: {
-        Authorization: `Bearer ${spotifyAuthInfo.accessToken}`,
-      },
-    });
-
-    // If token works, return it
-    if (response.ok) {
-      return spotifyAuthInfo.accessToken;
-    }
-
-    console.error("Access token expired, refreshing...");
-
-    // If token doesn't work, refresh it
-    const refreshResponse = await fetch(
-      "https://accounts.spotify.com/api/token",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Authorization:
-            "Basic " +
-            Buffer.from(
-              spotifyAuthInfo.clientId + ":" + spotifyAuthInfo.clientSecret
-            ).toString("base64"),
-        },
-        body: new URLSearchParams({
-          grant_type: "refresh_token",
-          refresh_token: spotifyAuthInfo.refreshToken,
-        }),
-      }
-    );
-
-    const data = (await refreshResponse.json()) as any;
-
-    if (data.access_token) {
-      console.error("Successfully refreshed access token");
-      spotifyAuthInfo.accessToken = data.access_token;
-      return spotifyAuthInfo.accessToken;
-    }
-
-    throw new Error("Failed to refresh access token");
-  } catch (error) {
-    throw new Error(
-      "Error with access token: " +
-        (error instanceof Error ? error.message : String(error))
-    );
-  }
-}
-
-// Helper function to create a new server instance (for stateless mode)
-function createServer() {
-  const server = new McpServer(
-    {
-      name: "bmi-calculator-server",
-      version: "1.0.0",
+// Helper function to create server instance
+function createSpotifyMcpServer() {
+  const server = new McpServer({
+    name: "SpotifyServer",
+    version: "1.0.0",
+    capabilities: {
+      tools: {},
     },
-    { capabilities: { logging: {} } }
-  );
+  });
 
-  // Register BMI calculator tool
-  server.registerTool(
+  let spotifyAuthInfo = {
+    accessToken: "",
+    refreshToken: "",
+    clientId: "",
+    clientSecret: "",
+  };
+
+  // Refresh token when needed
+  async function getValidAccessToken() {
+    if (!spotifyAuthInfo.accessToken || !spotifyAuthInfo.refreshToken) {
+      throw new Error(
+        "No access token available. Please set credentials first using the set-spotify-credentials tool."
+      );
+    }
+
+    try {
+      // Try using current token
+      const response = await fetch("https://api.spotify.com/v1/me", {
+        headers: {
+          Authorization: `Bearer ${spotifyAuthInfo.accessToken}`,
+        },
+      });
+
+      // If token works, return it
+      if (response.ok) {
+        return spotifyAuthInfo.accessToken;
+      }
+
+      console.log("Access token expired, refreshing...");
+
+      // If token doesn't work, refresh it
+      const refreshResponse = await fetch(
+        "https://accounts.spotify.com/api/token",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            Authorization:
+              "Basic " +
+              Buffer.from(
+                spotifyAuthInfo.clientId + ":" + spotifyAuthInfo.clientSecret
+              ).toString("base64"),
+          },
+          body: new URLSearchParams({
+            grant_type: "refresh_token",
+            refresh_token: spotifyAuthInfo.refreshToken,
+          }),
+        }
+      );
+
+      const data = await refreshResponse.json();
+
+      if (data.access_token) {
+        console.log("Successfully refreshed access token");
+        spotifyAuthInfo.accessToken = data.access_token;
+        return spotifyAuthInfo.accessToken;
+      }
+
+      throw new Error("Failed to refresh access token");
+    } catch (error) {
+      throw new Error("Error with access token: " + error.message);
+    }
+  }
+
+  // Set credentials tool
+  server.tool(
     "set-spotify-credentials",
-    z.object({
+    {
       clientId: z.string().describe("The Spotify Client ID"),
       clientSecret: z.string().describe("The Spotify Client Secret"),
       accessToken: z.string().describe("The Spotify Access Token"),
       refreshToken: z.string().describe("The Spotify Refresh Token"),
-    }),
+    },
     async ({ clientId, clientSecret, accessToken, refreshToken }) => {
       spotifyAuthInfo.clientId = clientId;
       spotifyAuthInfo.clientSecret = clientSecret;
@@ -107,7 +106,7 @@ function createServer() {
   );
 
   // Check credentials tool
-  server.registerTool("check-credentials-status", {}, async () => {
+  server.tool("check-credentials-status", {}, async () => {
     if (
       !spotifyAuthInfo.accessToken ||
       !spotifyAuthInfo.refreshToken ||
@@ -134,7 +133,7 @@ function createServer() {
       });
 
       if (response.ok) {
-        const userData = (await response.json()) as any;
+        const userData = await response.json();
         return {
           content: [
             {
@@ -161,9 +160,7 @@ function createServer() {
         content: [
           {
             type: "text",
-            text: `Error checking credentials: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
+            text: `Error checking credentials: ${error.message}`,
           },
         ],
         isError: true,
@@ -172,9 +169,9 @@ function createServer() {
   });
 
   // Search tracks
-  server.registerTool(
+  server.tool(
     "search-tracks",
-    z.object({
+    {
       query: z.string().describe("Search query for tracks"),
       limit: z
         .number()
@@ -182,7 +179,7 @@ function createServer() {
         .max(50)
         .default(10)
         .describe("Number of results to return"),
-    }),
+    },
     async ({ query, limit }) => {
       try {
         const accessToken = await getValidAccessToken();
@@ -198,7 +195,7 @@ function createServer() {
           }
         );
 
-        const data = (await response.json()) as any;
+        const data = await response.json();
 
         if (!response.ok) {
           return {
@@ -212,10 +209,10 @@ function createServer() {
           };
         }
 
-        const tracks = data.tracks.items.map((track: any) => ({
+        const tracks = data.tracks.items.map((track) => ({
           id: track.id,
           name: track.name,
-          artist: track.artists.map((artist: any) => artist.name).join(", "),
+          artist: track.artists.map((artist) => artist.name).join(", "),
           album: track.album.name,
           uri: track.uri,
         }));
@@ -233,9 +230,7 @@ function createServer() {
           content: [
             {
               type: "text",
-              text: `Failed to search tracks: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
+              text: `Failed to search tracks: ${error.message}`,
             },
           ],
           isError: true,
@@ -245,7 +240,7 @@ function createServer() {
   );
 
   // Get current user
-  server.registerTool("get-current-user", {}, async () => {
+  server.tool("get-current-user", {}, async () => {
     try {
       const accessToken = await getValidAccessToken();
 
@@ -255,7 +250,7 @@ function createServer() {
         },
       });
 
-      const data = (await response.json()) as any;
+      const data = await response.json();
 
       if (!response.ok) {
         return {
@@ -291,9 +286,7 @@ function createServer() {
         content: [
           {
             type: "text",
-            text: `Failed to get user profile: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
+            text: `Failed to get user profile: ${error.message}`,
           },
         ],
         isError: true,
@@ -302,12 +295,15 @@ function createServer() {
   });
 
   // Create playlist
-  server.registerTool(
+  server.tool(
     "create-playlist",
-    z.object({
+    {
       name: z.string().describe("Name of the playlist"),
-      description: z.string().describe("Description of the playlist"),
-    }),
+      description: z
+        .string()
+        .optional()
+        .describe("Description of the playlist"),
+    },
     async ({ name, description = "" }) => {
       try {
         const accessToken = await getValidAccessToken();
@@ -319,7 +315,7 @@ function createServer() {
           },
         });
 
-        const userData = (await userResponse.json()) as any;
+        const userData = await userResponse.json();
         const userId = userData.id;
 
         // Create playlist
@@ -339,7 +335,7 @@ function createServer() {
           }
         );
 
-        const data = (await response.json()) as any;
+        const data = await response.json();
 
         if (!response.ok) {
           return {
@@ -366,9 +362,7 @@ function createServer() {
           content: [
             {
               type: "text",
-              text: `Failed to create playlist: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
+              text: `Failed to create playlist: ${error.message}`,
             },
           ],
           isError: true,
@@ -378,14 +372,14 @@ function createServer() {
   );
 
   // Add tracks to playlist
-  server.registerTool(
+  server.tool(
     "add-tracks-to-playlist",
-    z.object({
+    {
       playlistId: z.string().describe("The Spotify playlist ID"),
       trackUris: z
         .array(z.string())
         .describe("Array of Spotify track URIs to add"),
-    }),
+    },
     async ({ playlistId, trackUris }) => {
       try {
         const accessToken = await getValidAccessToken();
@@ -404,7 +398,7 @@ function createServer() {
           }
         );
 
-        const data = (await response.json()) as any;
+        const data = await response.json();
 
         if (!response.ok) {
           return {
@@ -431,9 +425,7 @@ function createServer() {
           content: [
             {
               type: "text",
-              text: `Failed to add tracks: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
+              text: `Failed to add tracks: ${error.message}`,
             },
           ],
           isError: true,
@@ -443,9 +435,9 @@ function createServer() {
   );
 
   // Get recommendations
-  server.registerTool(
+  server.tool(
     "get-recommendations",
-    z.object({
+    {
       seedTracks: z
         .array(z.string())
         .max(5)
@@ -456,7 +448,7 @@ function createServer() {
         .max(100)
         .default(20)
         .describe("Number of recommendations to return"),
-    }),
+    },
     async ({ seedTracks, limit }) => {
       try {
         const accessToken = await getValidAccessToken();
@@ -484,7 +476,7 @@ function createServer() {
           }
         );
 
-        const data = (await response.json()) as any;
+        const data = await response.json();
 
         if (!response.ok) {
           return {
@@ -498,10 +490,10 @@ function createServer() {
           };
         }
 
-        const tracks = data.tracks.map((track: any) => ({
+        const tracks = data.tracks.map((track) => ({
           id: track.id,
           name: track.name,
-          artist: track.artists.map((artist: any) => artist.name).join(", "),
+          artist: track.artists.map((artist) => artist.name).join(", "),
           album: track.album.name,
           uri: track.uri,
         }));
@@ -519,9 +511,7 @@ function createServer() {
           content: [
             {
               type: "text",
-              text: `Failed to get recommendations: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
+              text: `Failed to get recommendations: ${error.message}`,
             },
           ],
           isError: true,
@@ -537,30 +527,41 @@ function createServer() {
 const app = express();
 app.use(express.json());
 
+// CORS configuration
+app.use(
+  cors({
+    origin: "*", // Configure this for production
+    exposedHeaders: ["Mcp-Session-Id"],
+    allowedHeaders: ["Content-Type", "mcp-session-id"],
+  })
+);
+
 // Health check endpoint
 app.get("/health", (req, res) => {
-  res.json({ status: "healthy" });
+  res.json({ status: "healthy", timestamp: new Date().toISOString() });
 });
 
-// Stateless MCP endpoint
+// MCP endpoint (stateless mode)
 app.post("/mcp", async (req, res) => {
   try {
-    // Create a new server and transport instance for each request (stateless)
-    const server = createServer();
+    // Create new server instance for each request (stateless)
+    const server = createSpotifyMcpServer();
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined, // No session management
     });
 
-    // Connect server to transport
-    await server.connect(transport);
-    // Handle the request
-    await transport.handleRequest(req, res, req.body);
     // Clean up when request closes
     res.on("close", () => {
-      console.log("Request closed, closing transport and server");
+      console.log("Request closed, cleaning up");
       transport.close();
       server.close();
     });
+
+    // Connect server to transport
+    await server.connect(transport);
+
+    // Handle the request
+    await transport.handleRequest(req, res, req.body);
   } catch (error) {
     console.error("Error handling MCP request:", error);
     if (!res.headersSent) {
@@ -579,8 +580,8 @@ app.post("/mcp", async (req, res) => {
 // Start the server
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`MCP Server running on port ${PORT}`);
+  console.log(`Spotify MCP Server running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
   console.log(`MCP endpoint: http://localhost:${PORT}/mcp`);
-  console.log(`Mode: STATELESS (new instance per request)`);
+  console.log(`Mode: STATELESS`);
 });
