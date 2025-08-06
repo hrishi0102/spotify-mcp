@@ -107,6 +107,8 @@ function createSpotifyMcpServer() {
 
   // Check credentials tool
   server.tool("check-credentials-status", {}, async () => {
+    console.log("Checking Spotify credentials status...");
+    console.log("Current auth info:", spotifyAuthInfo);
     if (
       !spotifyAuthInfo.accessToken ||
       !spotifyAuthInfo.refreshToken ||
