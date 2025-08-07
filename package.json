@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "description": "MCP server for Spotify API integration",
   "type": "module",
-  "main": "build/spotify-mcp-server.js",
+  "main": "build/spotify-mcp.js",
   "scripts": {
     "auth": "node spotify-auth.js",
     "build": "tsc",
-    "start": "node build/spotify-mcp-server.js"
+    "start": "node build/spotify-mcp-http.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.16.0",
