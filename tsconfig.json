@@ -4,12 +4,12 @@
     "module": "Node16",
     "moduleResolution": "Node16",
     "outDir": "./build",
-    "rootDir": "./",
+    "rootDir": "./mcp",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["*.ts"],
+  "include": ["*.ts", "mcp/spotify-mcp.ts", "mcp/spotify-mcp-sse.ts"],
   "exclude": ["node_modules"]
 }
