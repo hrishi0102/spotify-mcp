@@ -24,21 +24,13 @@ console.log("🎵 Spotify Config:");
 console.log("- Client ID:", SPOTIFY_CLIENT_ID);
 console.log("- Redirect URI:", SPOTIFY_REDIRECT_URI);
 
-// Session storage with timeout tracking
+// Session storage
 const transports = new Map();
 const sessionTokens = new Map();
-const sessionTimers = new Map();
 
 // Simple cleanup function
 function cleanupSession(sessionId) {
   console.log(`🧹 Cleaning up session: ${sessionId}`);
-
-  // Clear timeout
-  const timer = sessionTimers.get(sessionId);
-  if (timer) {
-    clearTimeout(timer);
-    sessionTimers.delete(sessionId);
-  }
 
   const transport = transports.get(sessionId);
   if (transport) {
@@ -51,15 +43,6 @@ function cleanupSession(sessionId) {
   }
 
   sessionTokens.delete(sessionId);
-}
-
-// Set 30-minute timeout for sessions (since Spotify tokens expire in 1 hour anyway)
-function setSessionTimeout(sessionId) {
-  const existingTimer = sessionTimers.get(sessionId);
-  if (existingTimer) clearTimeout(existingTimer);
-
-  const timer = setTimeout(() => cleanupSession(sessionId), 30 * 60 * 1000);
-  sessionTimers.set(sessionId, timer);
 }
 
 // Helper functions
@@ -197,9 +180,7 @@ This will redirect you to connect your Spotify account. After authentication, re
 
   try {
     console.log(`✅ Executing Spotify API call for session: ${sessionId}`);
-    const result = await apiCall(accessToken);
-    setSessionTimeout(sessionId); // Reset timeout on successful API calls
-    return result;
+    return await apiCall(accessToken);
   } catch (error) {
     if (error.response?.status === 401) {
       console.log(`❌ Token expired for session: ${sessionId}`);
@@ -648,7 +629,6 @@ app.get("/callback/spotify", async (req, res) => {
   try {
     const tokens = await exchangeCodeForTokens(code);
     sessionTokens.set(sessionId, tokens);
-    setSessionTimeout(sessionId); // Reset timeout on successful auth
     console.log(`✅ OAuth successful for session: ${sessionId}`);
 
     res.send(`
@@ -726,13 +706,13 @@ app.post("/mcp", async (req, res) => {
         sessionIdGenerator: () => newSessionId,
         onsessioninitialized: (sessionId) => {
           console.log(`🎯 New MCP session initialized: ${sessionId}`);
-          setSessionTimeout(sessionId); // Start timeout
         },
       });
 
-      // Clean up transport when closed - like Kite MCP
+      // Clean up transport when closed (ONLY key change)
       transport.onclose = () => {
         if (transport.sessionId) {
+          console.log(`🔌 MCP session closed: ${transport.sessionId}`);
           cleanupSession(transport.sessionId);
         }
       };
@@ -754,16 +734,6 @@ app.post("/mcp", async (req, res) => {
         id: null,
       });
       return;
-    }
-
-    // Add request-level cleanup for cloud environments
-    if (req.socket) {
-      req.socket.on("close", () => {
-        if (transport?.sessionId && transports.has(transport.sessionId)) {
-          console.log(`🔌 Socket closed for session: ${transport.sessionId}`);
-          cleanupSession(transport.sessionId);
-        }
-      });
     }
 
     // Handle the request
@@ -817,6 +787,5 @@ app.listen(PORT, () => {
   console.log(`🔗 Health check: http://localhost:${PORT}/health`);
   console.log(`🔗 MCP endpoint: http://localhost:${PORT}/mcp`);
   console.log(`🔗 OAuth callback: http://localhost:${PORT}/callback/spotify`);
-  console.log(`📊 Mode: STATEFUL with OAuth & Session Cleanup`);
-  console.log(`⏰ Session timeout: 30 minutes`);
+  console.log(`📊 Mode: STATEFUL with OAuth`);
 });
