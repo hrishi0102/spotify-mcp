@@ -20,7 +20,7 @@ if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
   process.exit(1);
 }
 
-console.log("Spotify Config:");
+console.log("🎵 Spotify Config:");
 console.log("- Client ID:", SPOTIFY_CLIENT_ID);
 console.log("- Redirect URI:", SPOTIFY_REDIRECT_URI);
 
@@ -123,7 +123,10 @@ async function getValidAccessToken(sessionId) {
       tokens = await refreshSpotifyToken(tokens);
       sessionTokens.set(sessionId, tokens);
     } catch (error) {
-      console.error("Token refresh failed:", error);
+      console.log(
+        `❌ Token refresh failed for session ${sessionId}:`,
+        error.message
+      );
       sessionTokens.delete(sessionId);
       return null;
     }
@@ -136,6 +139,7 @@ async function handleSpotifyTool(sessionId, apiCall) {
   const accessToken = await getValidAccessToken(sessionId);
 
   if (!accessToken) {
+    console.log(`🔐 Auth required for session: ${sessionId}`);
     const baseUrl =
       process.env.SPOTIFY_REDIRECT_URI?.replace("/callback/spotify", "") ||
       "http://localhost:8080";
@@ -158,19 +162,23 @@ This will redirect you to connect your Spotify account. After authentication, re
   }
 
   try {
+    console.log(`✅ Executing Spotify API call for session: ${sessionId}`);
     return await apiCall(accessToken);
   } catch (error) {
     if (error.response?.status === 401) {
-      // Token invalid, clear it and request re-auth
+      console.log(`❌ Token expired for session: ${sessionId}`);
       sessionTokens.delete(sessionId);
-      const authUrl = getSpotifyAuthUrl(sessionId);
+      const baseUrl =
+        process.env.SPOTIFY_REDIRECT_URI?.replace("/callback/spotify", "") ||
+        "http://localhost:8080";
+      const authUrl = `${baseUrl}/auth?session=${sessionId}`;
       return {
         content: [
           {
             type: "text",
             text: `🔐 **Spotify Authentication Expired**
 
-Your Spotify session has expired. Please click this link to re-authenticate:
+Your Spotify session has expired. Please visit:
 
 ${authUrl}
 
@@ -181,6 +189,10 @@ After completing authentication, return here and try your request again.`,
       };
     }
 
+    console.log(
+      `❌ Spotify API error for session ${sessionId}:`,
+      error.message
+    );
     return {
       content: [
         {
@@ -195,8 +207,8 @@ ${error.message}`,
   }
 }
 
-// Create MCP server instance
-function createSpotifyMcpServer() {
+// Create MCP server instance with session context
+function createSpotifyMcpServer(sessionId) {
   const server = new McpServer({
     name: "SpotifyServer",
     version: "1.0.0",
@@ -218,9 +230,7 @@ function createSpotifyMcpServer() {
           .describe("Number of results to return"),
       },
     },
-    async ({ query, limit }, context) => {
-      const sessionId = context.sessionId;
-
+    async ({ query, limit }) => {
       return await handleSpotifyTool(sessionId, async (accessToken) => {
         const response = await fetch(
           `https://api.spotify.com/v1/search?q=${encodeURIComponent(
@@ -268,9 +278,7 @@ function createSpotifyMcpServer() {
       title: "Get Current User",
       description: "Get current Spotify user information",
     },
-    async (params, context) => {
-      const sessionId = context.sessionId;
-
+    async () => {
       return await handleSpotifyTool(sessionId, async (accessToken) => {
         const response = await fetch("https://api.spotify.com/v1/me", {
           headers: {
@@ -326,9 +334,7 @@ function createSpotifyMcpServer() {
           .describe("Whether playlist should be public"),
       },
     },
-    async ({ name, description = "", public: isPublic }, context) => {
-      const sessionId = context.sessionId;
-
+    async ({ name, description = "", public: isPublic }) => {
       return await handleSpotifyTool(sessionId, async (accessToken) => {
         // Get user ID first
         const userResponse = await fetch("https://api.spotify.com/v1/me", {
@@ -369,7 +375,7 @@ function createSpotifyMcpServer() {
           content: [
             {
               type: "text",
-              text: `Playlist created successfully!\nName: ${data.name}\nID: ${data.id}\nURL: ${data.external_urls.spotify}`,
+              text: `✅ Playlist created successfully!\n\n**${data.name}**\nID: ${data.id}\n🔗 [Open in Spotify](${data.external_urls.spotify})`,
             },
           ],
         };
@@ -390,9 +396,7 @@ function createSpotifyMcpServer() {
           .describe("Array of Spotify track URIs to add"),
       },
     },
-    async ({ playlistId, trackUris }, context) => {
-      const sessionId = context.sessionId;
-
+    async ({ playlistId, trackUris }) => {
       return await handleSpotifyTool(sessionId, async (accessToken) => {
         const response = await fetch(
           `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
@@ -420,7 +424,7 @@ function createSpotifyMcpServer() {
           content: [
             {
               type: "text",
-              text: `Successfully added ${trackUris.length} track(s) to playlist!`,
+              text: `✅ Successfully added ${trackUris.length} track(s) to playlist!`,
             },
           ],
         };
@@ -447,9 +451,7 @@ function createSpotifyMcpServer() {
           .describe("Number of recommendations to return"),
       },
     },
-    async ({ seedTracks, limit }, context) => {
-      const sessionId = context.sessionId;
-
+    async ({ seedTracks, limit }) => {
       return await handleSpotifyTool(sessionId, async (accessToken) => {
         if (seedTracks.length === 0) {
           throw new Error("At least one seed track is required");
@@ -704,43 +706,67 @@ app.get("/callback/spotify", async (req, res) => {
 
 // MCP endpoint with session management
 app.post("/mcp", async (req, res) => {
-  const sessionId = req.headers["mcp-session-id"];
-  let transport;
+  try {
+    const sessionId = req.headers["mcp-session-id"];
+    let transport;
 
-  if (sessionId && transports.has(sessionId)) {
-    transport = transports.get(sessionId);
-  } else if (!sessionId && isInitializeRequest(req.body)) {
-    transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
-      onsessioninitialized: (sessionId) => {
-        transports.set(sessionId, transport);
-        console.log(`New MCP session initialized: ${sessionId}`);
-      },
-    });
+    if (sessionId && transports.has(sessionId)) {
+      // Reuse existing transport
+      transport = transports.get(sessionId);
+    } else if (!sessionId && isInitializeRequest(req.body)) {
+      // New initialization request
+      const newSessionId = randomUUID();
 
-    transport.onclose = () => {
-      if (transport.sessionId) {
-        console.log(`🔌 MCP session closed: ${transport.sessionId}`);
-        transports.delete(transport.sessionId);
-        sessionTokens.delete(transport.sessionId);
-      }
-    };
+      transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => newSessionId,
+        onsessioninitialized: (sessionId) => {
+          console.log(`🎯 New MCP session initialized: ${sessionId}`);
+        },
+      });
 
-    const server = createSpotifyMcpServer();
-    await server.connect(transport);
-  } else {
-    res.status(400).json({
-      jsonrpc: "2.0",
-      error: {
-        code: -32000,
-        message: "Bad Request: No valid session ID provided",
-      },
-      id: null,
-    });
-    return;
+      // Clean up transport when closed
+      transport.onclose = () => {
+        if (transport.sessionId) {
+          console.log(`🔌 MCP session closed: ${transport.sessionId}`);
+          transports.delete(transport.sessionId);
+          sessionTokens.delete(transport.sessionId);
+        }
+      };
+
+      // Create and connect server with sessionId
+      const server = createSpotifyMcpServer(newSessionId);
+      await server.connect(transport);
+
+      // Store transport
+      transports.set(newSessionId, transport);
+    } else {
+      // Invalid request
+      res.status(400).json({
+        jsonrpc: "2.0",
+        error: {
+          code: -32000,
+          message: "Bad Request: No valid session ID provided",
+        },
+        id: null,
+      });
+      return;
+    }
+
+    // Handle the request
+    await transport.handleRequest(req, res, req.body);
+  } catch (error) {
+    console.error(`❌ MCP request error:`, error.message);
+    if (!res.headersSent) {
+      res.status(500).json({
+        jsonrpc: "2.0",
+        error: {
+          code: -32603,
+          message: "Internal server error",
+        },
+        id: null,
+      });
+    }
   }
-
-  await transport.handleRequest(req, res, req.body);
 });
 
 // Handle GET requests for server-to-client notifications via SSE
