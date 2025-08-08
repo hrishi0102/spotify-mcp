@@ -28,6 +28,23 @@ console.log("- Redirect URI:", SPOTIFY_REDIRECT_URI);
 const transports = new Map();
 const sessionTokens = new Map();
 
+// Simple cleanup function
+function cleanupSession(sessionId) {
+  console.log(`🧹 Cleaning up session: ${sessionId}`);
+
+  const transport = transports.get(sessionId);
+  if (transport) {
+    try {
+      transport.close();
+    } catch (error) {
+      console.warn(`Warning closing transport:`, error.message);
+    }
+    transports.delete(sessionId);
+  }
+
+  sessionTokens.delete(sessionId);
+}
+
 // Helper functions
 function isTokenExpired(tokens) {
   if (!tokens.expiresAt) return true;
@@ -514,7 +531,11 @@ app.use(
 
 // Health check
 app.get("/health", (req, res) => {
-  res.json({ status: "healthy", timestamp: new Date().toISOString() });
+  res.json({
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+    activeSessions: transports.size,
+  });
 });
 
 // Simple auth landing page
@@ -664,43 +685,7 @@ app.get("/callback/spotify", async (req, res) => {
       `❌ Token exchange failed for session ${sessionId}:`,
       error.message
     );
-    res.status(500).send(`
-      <html>
-        <head>
-          <title>Spotify Authentication Error</title>
-          <style>
-            body { 
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-              text-align: center; 
-              padding: 50px; 
-              background: linear-gradient(135deg, #e74c3c, #c0392b);
-              color: white;
-              margin: 0;
-            }
-            .container {
-              background: rgba(0,0,0,0.1);
-              padding: 40px;
-              border-radius: 20px;
-              backdrop-filter: blur(10px);
-              display: inline-block;
-              max-width: 500px;
-            }
-            .error-icon { font-size: 60px; margin-bottom: 20px; }
-            h1 { margin: 20px 0; font-size: 28px; }
-            p { font-size: 16px; line-height: 1.5; opacity: 0.9; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="error-icon">❌</div>
-            <h1>Authentication Failed</h1>
-            <p>Unable to connect your Spotify account.</p>
-            <p><strong>Error:</strong> ${error.message}</p>
-            <p>Please try the authentication process again.</p>
-          </div>
-        </body>
-      </html>
-    `);
+    res.status(500).send(`Authentication error: ${error.message}`);
   }
 });
 
@@ -724,12 +709,11 @@ app.post("/mcp", async (req, res) => {
         },
       });
 
-      // Clean up transport when closed
+      // Clean up transport when closed (ONLY key change)
       transport.onclose = () => {
         if (transport.sessionId) {
           console.log(`🔌 MCP session closed: ${transport.sessionId}`);
-          transports.delete(transport.sessionId);
-          sessionTokens.delete(transport.sessionId);
+          cleanupSession(transport.sessionId);
         }
       };
 
@@ -791,6 +775,9 @@ app.delete("/mcp", async (req, res) => {
 
   const transport = transports.get(sessionId);
   await transport.handleRequest(req, res);
+
+  // Clean up on explicit delete
+  cleanupSession(sessionId);
 });
 
 // Start server
