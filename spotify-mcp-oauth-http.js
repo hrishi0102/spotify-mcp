@@ -20,6 +20,10 @@ if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
   process.exit(1);
 }
 
+console.log("Spotify Config:");
+console.log("- Client ID:", SPOTIFY_CLIENT_ID);
+console.log("- Redirect URI:", SPOTIFY_REDIRECT_URI);
+
 // Session storage
 const transports = new Map();
 const sessionTokens = new Map();
@@ -132,13 +136,22 @@ async function handleSpotifyTool(sessionId, apiCall) {
   const accessToken = await getValidAccessToken(sessionId);
 
   if (!accessToken) {
+    const baseUrl =
+      process.env.SPOTIFY_REDIRECT_URI?.replace("/callback/spotify", "") ||
+      "http://localhost:8080";
+    const authUrl = `${baseUrl}/auth?session=${sessionId}`;
+
     return {
       content: [
         {
           type: "text",
-          text: `Please authenticate with Spotify by visiting this link:\n${getSpotifyAuthUrl(
-            sessionId
-          )}\n\nAfter authentication, come back and try again.`,
+          text: `🎵 **Spotify Authentication Required**
+
+To use Spotify features, please visit:
+
+${authUrl}
+
+This will redirect you to connect your Spotify account. After authentication, return here and try your request again.`,
         },
       ],
     };
@@ -150,13 +163,18 @@ async function handleSpotifyTool(sessionId, apiCall) {
     if (error.response?.status === 401) {
       // Token invalid, clear it and request re-auth
       sessionTokens.delete(sessionId);
+      const authUrl = getSpotifyAuthUrl(sessionId);
       return {
         content: [
           {
             type: "text",
-            text: `Authentication expired. Please authenticate again:\n${getSpotifyAuthUrl(
-              sessionId
-            )}`,
+            text: `🔐 **Spotify Authentication Expired**
+
+Your Spotify session has expired. Please click this link to re-authenticate:
+
+${authUrl}
+
+After completing authentication, return here and try your request again.`,
           },
         ],
         isError: true,
@@ -167,7 +185,9 @@ async function handleSpotifyTool(sessionId, apiCall) {
       content: [
         {
           type: "text",
-          text: `Error: ${error.message}`,
+          text: `❌ **Spotify API Error**
+
+${error.message}`,
         },
       ],
       isError: true,
@@ -495,36 +515,190 @@ app.get("/health", (req, res) => {
   res.json({ status: "healthy", timestamp: new Date().toISOString() });
 });
 
+// Simple auth landing page
+app.get("/auth", (req, res) => {
+  const sessionId = req.query.session;
+
+  if (!sessionId) {
+    res.status(400).send("Missing session ID");
+    return;
+  }
+
+  const authUrl = getSpotifyAuthUrl(sessionId);
+
+  res.send(`
+    <html>
+      <head>
+        <title>Connect Spotify to Claude</title>
+        <style>
+          body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            text-align: center; 
+            padding: 50px; 
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            margin: 0;
+          }
+          .container {
+            background: rgba(0,0,0,0.1);
+            padding: 40px;
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            display: inline-block;
+            max-width: 500px;
+          }
+          .spotify-icon { font-size: 60px; margin-bottom: 20px; }
+          h1 { margin: 20px 0; font-size: 28px; }
+          p { font-size: 18px; line-height: 1.5; opacity: 0.9; }
+          .auth-button {
+            display: inline-block;
+            background: #1db954;
+            color: white;
+            padding: 15px 30px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-size: 18px;
+            font-weight: bold;
+            margin: 20px 0;
+            transition: all 0.3s ease;
+          }
+          .auth-button:hover {
+            background: #1ed760;
+            transform: translateY(-2px);
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="spotify-icon">🎵</div>
+          <h1>Connect Spotify to Claude</h1>
+          <p>Click the button below to connect your Spotify account and enable music features in Claude.</p>
+          
+          <a href="${authUrl}" class="auth-button">Connect Spotify Account</a>
+          
+          <p style="font-size: 14px; margin-top: 30px;">
+            After connecting, return to Claude to use Spotify features.
+          </p>
+        </div>
+      </body>
+    </html>
+  `);
+});
+
 // Spotify OAuth callback
 app.get("/callback/spotify", async (req, res) => {
   const { code, state: sessionId, error } = req.query;
 
   if (error) {
+    console.log(`❌ OAuth error: ${error}`);
     res.status(400).send(`Authentication error: ${error}`);
     return;
   }
 
   if (!code || !sessionId) {
+    console.log(`❌ OAuth callback missing code or sessionId`);
     res.status(400).send("Missing authorization code or session ID");
     return;
   }
 
+  console.log(`🔄 Processing OAuth callback for session: ${sessionId}`);
+
   try {
     const tokens = await exchangeCodeForTokens(code);
     sessionTokens.set(sessionId, tokens);
+    console.log(`✅ OAuth successful for session: ${sessionId}`);
 
     res.send(`
       <html>
-        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-          <h2>✅ Successfully connected to Spotify!</h2>
-          <p>You can now return to Claude and use Spotify features.</p>
-          <p>This window can be closed.</p>
+        <head>
+          <title>Spotify Connected Successfully</title>
+          <style>
+            body { 
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+              text-align: center; 
+              padding: 50px; 
+              background: linear-gradient(135deg, #1db954, #1ed760);
+              color: white;
+              margin: 0;
+            }
+            .container {
+              background: rgba(0,0,0,0.1);
+              padding: 40px;
+              border-radius: 20px;
+              backdrop-filter: blur(10px);
+              display: inline-block;
+              max-width: 500px;
+            }
+            .success-icon { font-size: 60px; margin-bottom: 20px; }
+            h1 { margin: 20px 0; font-size: 28px; }
+            p { font-size: 18px; line-height: 1.5; opacity: 0.9; }
+            .instruction { 
+              background: rgba(255,255,255,0.1); 
+              padding: 20px; 
+              border-radius: 10px; 
+              margin-top: 30px;
+              border: 1px solid rgba(255,255,255,0.2);
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="success-icon">🎵</div>
+            <h1>Successfully Connected to Spotify!</h1>
+            <p>Your Spotify account is now linked to Claude.</p>
+            
+            <div class="instruction">
+              <strong>Next Steps:</strong><br>
+              1. Return to your Claude conversation<br>
+              2. Try your Spotify request again<br>
+              3. This window can be closed
+            </div>
+          </div>
         </body>
       </html>
     `);
   } catch (error) {
-    console.error("Token exchange error:", error);
-    res.status(500).send(`Authentication failed: ${error.message}`);
+    console.error(
+      `❌ Token exchange failed for session ${sessionId}:`,
+      error.message
+    );
+    res.status(500).send(`
+      <html>
+        <head>
+          <title>Spotify Authentication Error</title>
+          <style>
+            body { 
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+              text-align: center; 
+              padding: 50px; 
+              background: linear-gradient(135deg, #e74c3c, #c0392b);
+              color: white;
+              margin: 0;
+            }
+            .container {
+              background: rgba(0,0,0,0.1);
+              padding: 40px;
+              border-radius: 20px;
+              backdrop-filter: blur(10px);
+              display: inline-block;
+              max-width: 500px;
+            }
+            .error-icon { font-size: 60px; margin-bottom: 20px; }
+            h1 { margin: 20px 0; font-size: 28px; }
+            p { font-size: 16px; line-height: 1.5; opacity: 0.9; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="error-icon">❌</div>
+            <h1>Authentication Failed</h1>
+            <p>Unable to connect your Spotify account.</p>
+            <p><strong>Error:</strong> ${error.message}</p>
+            <p>Please try the authentication process again.</p>
+          </div>
+        </body>
+      </html>
+    `);
   }
 });
 
@@ -546,9 +720,9 @@ app.post("/mcp", async (req, res) => {
 
     transport.onclose = () => {
       if (transport.sessionId) {
+        console.log(`🔌 MCP session closed: ${transport.sessionId}`);
         transports.delete(transport.sessionId);
         sessionTokens.delete(transport.sessionId);
-        console.log(`MCP session closed: ${transport.sessionId}`);
       }
     };
 
@@ -596,9 +770,9 @@ app.delete("/mcp", async (req, res) => {
 // Start server
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`Spotify OAuth MCP Server running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/health`);
-  console.log(`MCP endpoint: http://localhost:${PORT}/mcp`);
-  console.log(`OAuth callback: http://localhost:${PORT}/callback/spotify`);
-  console.log(`Mode: STATEFUL with OAuth`);
+  console.log(`🚀 Spotify OAuth MCP Server running on port ${PORT}`);
+  console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+  console.log(`🔗 MCP endpoint: http://localhost:${PORT}/mcp`);
+  console.log(`🔗 OAuth callback: http://localhost:${PORT}/callback/spotify`);
+  console.log(`📊 Mode: STATEFUL with OAuth`);
 });
