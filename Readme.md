@@ -24,6 +24,15 @@ A simple Model Context Protocol (MCP) server that lets you interact with Spotify
 
 ## Setup Instructions
 
+## Released a new hosted HTTP Spotify MCP Server
+
+1. Go to [Claude AI](https://claude.ai/)
+2. Click on Add Connectors
+3. Click on Manage Connectors
+4. Add custom connector
+5. Add the https server link
+6. That's it. Your claude is ready to use Spotify. You will be prompted to sign-in using spotify OAuth.
+
 ### 1. Prerequisites
 
 - Node.js v16 or higher
