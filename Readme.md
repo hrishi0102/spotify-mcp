@@ -24,7 +24,7 @@ A simple Model Context Protocol (MCP) server that lets you interact with Spotify
 
 ## Setup Instructions
 
-## Released a new hosted HTTP Spotify MCP Server
+## Plug and Play - HTTP Spotify MCP Server
 
 1. Go to [Claude AI](https://claude.ai/)
 2. Click on Add Connectors
@@ -33,6 +33,8 @@ A simple Model Context Protocol (MCP) server that lets you interact with Spotify
 5. Add the https server link
 6. Mail hrishi0102business@gmail.com to whitelist your spotify ID/mail
 7. That's it. Your claude is ready to use Spotify. You will be prompted to sign-in using spotify OAuth.
+
+## Run Spotify MCP locally
 
 ### 1. Prerequisites
 
