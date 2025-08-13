@@ -27,6 +27,11 @@ console.log("- Redirect URI:", SPOTIFY_REDIRECT_URI);
 // Session storage
 const transports = new Map();
 const sessionTokens = new Map();
+const sessionActivity = new Map(); // Track last activity per session
+
+// Session cleanup configuration
+const INACTIVITY_TIMEOUT = 8 * 60 * 1000; // 8 minutes
+const CLEANUP_INTERVAL = 3 * 60 * 1000; // 3 minutes
 
 // Simple cleanup function
 function cleanupSession(sessionId) {
@@ -43,7 +48,33 @@ function cleanupSession(sessionId) {
   }
 
   sessionTokens.delete(sessionId);
+  sessionActivity.delete(sessionId);
 }
+
+// Update session activity
+function updateSessionActivity(sessionId) {
+  sessionActivity.set(sessionId, Date.now());
+}
+
+// Cleanup inactive sessions
+function cleanupInactiveSessions() {
+  const now = Date.now();
+  const inactiveSessions = [];
+
+  for (const [sessionId, lastActivity] of sessionActivity.entries()) {
+    if (now - lastActivity > INACTIVITY_TIMEOUT) {
+      inactiveSessions.push(sessionId);
+    }
+  }
+
+  if (inactiveSessions.length > 0) {
+    console.log(`🧹 Cleaning up ${inactiveSessions.length} inactive sessions`);
+    inactiveSessions.forEach(cleanupSession);
+  }
+}
+
+// Start cleanup interval
+setInterval(cleanupInactiveSessions, CLEANUP_INTERVAL);
 
 // Helper functions
 function isTokenExpired(tokens) {
@@ -696,8 +727,9 @@ app.post("/mcp", async (req, res) => {
     let transport;
 
     if (sessionId && transports.has(sessionId)) {
-      // Reuse existing transport
+      // Reuse existing transport and update activity
       transport = transports.get(sessionId);
+      updateSessionActivity(sessionId);
     } else if (!sessionId && isInitializeRequest(req.body)) {
       // New initialization request
       const newSessionId = randomUUID();
@@ -706,10 +738,11 @@ app.post("/mcp", async (req, res) => {
         sessionIdGenerator: () => newSessionId,
         onsessioninitialized: (sessionId) => {
           console.log(`🎯 New MCP session initialized: ${sessionId}`);
+          updateSessionActivity(sessionId); // Track initial activity
         },
       });
 
-      // Clean up transport when closed (ONLY key change)
+      // Clean up transport when closed
       transport.onclose = () => {
         if (transport.sessionId) {
           console.log(`🔌 MCP session closed: ${transport.sessionId}`);
@@ -762,6 +795,7 @@ app.get("/mcp", async (req, res) => {
   }
 
   const transport = transports.get(sessionId);
+  updateSessionActivity(sessionId); // Update activity for SSE requests too
   await transport.handleRequest(req, res);
 });
 
@@ -788,4 +822,7 @@ app.listen(PORT, () => {
   console.log(`🔗 MCP endpoint: http://localhost:${PORT}/mcp`);
   console.log(`🔗 OAuth callback: http://localhost:${PORT}/callback/spotify`);
   console.log(`📊 Mode: STATEFUL with OAuth`);
+  console.log(
+    `⏰ Session cleanup: ${INACTIVITY_TIMEOUT / 60000} min inactivity timeout`
+  );
 });
