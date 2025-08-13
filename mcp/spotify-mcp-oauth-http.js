@@ -74,7 +74,13 @@ function cleanupInactiveSessions() {
 }
 
 // Start cleanup interval
-setInterval(cleanupInactiveSessions, CLEANUP_INTERVAL);
+setInterval(() => {
+  try {
+    cleanupInactiveSessions();
+  } catch (error) {
+    console.error('Error during inactive session cleanup:', error);
+  }
+}, CLEANUP_INTERVAL);
 
 // Helper functions
 function isTokenExpired(tokens) {
