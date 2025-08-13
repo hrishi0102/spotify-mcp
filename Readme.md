@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/hrishi0102-spotifyyy-mcp-badge.png)](https://mseep.ai/app/hrishi0102-spotifyyy-mcp)
+
 # Spotify MCP Server
 
 A simple Model Context Protocol (MCP) server that lets you interact with Spotify through Claude. This server enables Claude to search for songs, create playlists, get recommendations, and more using your Spotify account.
