@@ -31,7 +31,8 @@ A simple Model Context Protocol (MCP) server that lets you interact with Spotify
 3. Click on Manage Connectors
 4. Add custom connector
 5. Add the https server link
-6. That's it. Your claude is ready to use Spotify. You will be prompted to sign-in using spotify OAuth.
+6. Mail hrishi0102business@gmail.com to whitelist your spotify ID/mail
+7. That's it. Your claude is ready to use Spotify. You will be prompted to sign-in using spotify OAuth.
 
 ### 1. Prerequisites
 
